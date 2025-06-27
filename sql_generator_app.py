@@ -72,7 +72,7 @@ if st.button("💾 Guardar plantilla"):
 # ------------------ GENERACIÓN ------------------
 
 if uploaded_file and template_editor:
-    df = pd.read_excel(uploaded_file)
+    df = pd.read_excel(uploaded_file, engine='openpyxl')
 
     st.subheader("👀 Vista previa del Excel")
     st.dataframe(df)
