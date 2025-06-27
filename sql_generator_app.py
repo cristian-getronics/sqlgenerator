@@ -2,15 +2,15 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, Column, Integer, String, Text
 from sqlalchemy.orm import sessionmaker, declarative_base
+import zipfile
 import os
 
-# Configuración de la app
+# Configuración de la página
 st.set_page_config(page_title="Generador SQL desde Excel", layout="wide")
 st.title("🧾 Generador de sentencias SQL desde Excel")
 
 # ------------------ BASE DE DATOS ------------------
 
-# Conexión SQLite y modelo
 Base = declarative_base()
 DB_PATH = "db/templates.db"
 os.makedirs("db", exist_ok=True)
@@ -45,8 +45,6 @@ def get_all_template_names():
 
 # ------------------ UI ------------------
 
-uploaded_file = st.file_uploader("📤 Sube tu archivo Excel", type=["xlsx"])
-
 st.subheader("✍️ Gestor de Plantillas SQL")
 
 plantilla_nombres = get_all_template_names()
@@ -68,36 +66,70 @@ if st.button("💾 Guardar plantilla"):
     if new_name and template_editor:
         save_template(new_name, template_editor)
         st.success(f"Plantilla '{new_name}' guardada con éxito")
+    else:
+        st.warning("⚠️ Debes introducir un nombre y contenido para guardar la plantilla.")
 
-# ------------------ GENERACIÓN ------------------
+# ------------------ CARGA DEL ARCHIVO ------------------
 
-if uploaded_file and template_editor:
-    df = pd.read_excel(uploaded_file, engine='openpyxl')
+uploaded_file = st.file_uploader("📤 Sube tu archivo Excel (.xlsx)", type=["xlsx"])
 
-    st.subheader("👀 Vista previa del Excel")
-    st.dataframe(df)
-    st.markdown("### 🧩 Columnas disponibles:")
-    st.write(", ".join(df.columns))
+# ------------------ GENERACIÓN SQL ------------------
 
-    st.subheader("📄 Sentencias SQL generadas")
-    sql_statements = []
-    for _, row in df.iterrows():
-        statement = template_editor
-        for col in df.columns:
-            value = row[col]
-            if pd.isnull(value):
-                value = "NULL"
-            elif isinstance(value, str) and not value.startswith("{"):
-                value = value.replace("'", "''")
-                value = f"'{value}'"
-            statement = statement.replace(f"{{{col}}}", str(value))
-        sql_statements.append(statement)
+if uploaded_file is not None:
+    try:
+        # Comprobamos tamaño del archivo
+        if uploaded_file.size == 0:
+            st.error("❌ El archivo está vacío. Por favor, sube uno válido.")
+            st.stop()
 
-    st.code("\n\n".join(sql_statements), language="sql")
+        # Mostrar información del archivo
+        st.info(f"📄 Archivo subido: {uploaded_file.name} ({uploaded_file.size // 1024} KB)")
 
-    st.download_button(
-        "⬇️ Descargar como .sql",
-        data="\n\n".join(sql_statements),
-        file_name="sentencias.sql",
-        mime="text/plain"
-    )
+        # Intentar leer el archivo Excel
+        df = pd.read_excel(uploaded_file, engine='openpyxl')
+
+        st.subheader("👀 Vista previa del Excel")
+        st.dataframe(df)
+        st.markdown("### 🧩 Columnas disponibles:")
+        st.write(", ".join(df.columns))
+
+        # Validar que hay datos en el DataFrame
+        if len(df) == 0:
+            st.warning("⚠️ El archivo está vacío (sin filas).")
+            st.stop()
+
+        # Generar sentencias SQL
+        st.subheader("📄 Sentencias SQL generadas")
+        sql_statements = []
+        for _, row in df.iterrows():
+            statement = template_editor
+            for col in df.columns:
+                value = row[col]
+                if pd.isnull(value):
+                    value = "NULL"
+                elif isinstance(value, str) and not value.startswith("{"):
+                    value = value.replace("'", "''")  # Escapar comillas simples
+                    value = f"'{value}'"
+                statement = statement.replace(f"{{{col}}}", str(value))
+            sql_statements.append(statement)
+
+        st.code("\n\n".join(sql_statements), language="sql")
+
+        # Botón de descarga
+        st.download_button(
+            "⬇️ Descargar como .sql",
+            data="\n\n".join(sql_statements),
+            file_name="sentencias.sql",
+            mime="text/plain"
+        )
+
+    except zipfile.BadZipFile:
+        st.error("❌ El archivo no es un Excel válido (.xlsx). Puede estar corrupto o no ser un archivo Excel.")
+    except KeyError as e:
+        st.error(f"❌ Error: La columna {e} no existe en el archivo Excel.")
+    except Exception as e:
+        st.error(f"⚠️ Ocurrió un error al procesar el archivo: {e}")
+        st.exception(e)  # Muestra el traceback completo en modo desarrollo
+
+else:
+    st.info("📂 Por favor, sube un archivo Excel (.xlsx) para comenzar.")
